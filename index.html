@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Double-Board Bomb Pot Sparring</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,system-ui,sans-serif;background:#0d3b2e;color:#eee;margin:0;padding:10px;max-width:560px;margin:0 auto}
+h1{font-size:20px;margin:6px 0}
+.hdr{display:flex;justify-content:space-between;align-items:center}
+.hdr .sess{font-size:13px;color:#a3e635}
+#boardwrap{background:#0a2e24;border:1px solid #1d5c46;border-radius:10px;padding:10px;margin:8px 0}
+#potline{font-size:15px;font-weight:700;color:#ffd75e;margin-bottom:6px}
+.boardrow{display:flex;align-items:center;gap:6px;margin:4px 0}
+.boardlbl{font-size:11px;font-weight:800;color:#7dd3fc;width:34px}
+#board1,#board2{display:flex;gap:6px;min-height:44px}
+.card{display:inline-block;width:38px;height:52px;border-radius:6px;background:#fff;color:#111;font-weight:700;font-size:17px;line-height:52px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.card.red{color:#c0392b}
+.card.back{background:repeating-linear-gradient(45deg,#1d4e89,#1d4e89 6px,#163a66 6px,#163a66 12px);color:transparent}
+#opps{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0}
+.opp{background:#0a2e24;border:1px solid #1d5c46;border-radius:8px;padding:6px 4px;text-align:center;font-size:11px}
+.opp .st{font-weight:700}
+.opp.folded{opacity:.35}
+#hero{background:#0a2e24;border:2px solid #a3e635;border-radius:10px;padding:10px;margin:8px 0}
+#hero .pos{font-size:12px;color:#a3e635;font-weight:800}
+#herocards{display:flex;gap:6px;margin:6px 0}
+#herostack{font-size:14px;font-weight:700}
+#actions{margin:8px 0;min-height:60px}
+#actions button{display:block;width:100%;margin:6px 0;padding:13px;font-size:16px;font-weight:700;border:none;border-radius:10px;background:#1d5c46;color:#fff}
+#actions button:active{background:#2a7a5c}
+#actions button.primary{background:#b45309}
+#actions button.danger{background:#7f1d1d}
+.sizerow{display:flex;gap:6px;margin:6px 0}
+.sizerow button{flex:1;padding:10px;font-size:14px}
+#feed{background:#081f18;border:1px solid #1d5c46;border-radius:10px;padding:8px;height:150px;overflow-y:auto;font-size:13px;margin:8px 0}
+#feed div{margin:3px 0}
+.grade{font-weight:800}
+.grade.A{color:#2ecc71}.grade.B{color:#a3e635}.grade.C{color:#f1c40f}.grade.D{color:#e67e22}.grade.F{color:#e74c3c}
+#nextbar{margin:8px 0}
+#nextbar button{width:100%;padding:13px;font-size:16px;font-weight:700;border:none;border-radius:10px;background:#1d4e89;color:#fff}
+.small{font-size:12px;color:#9ca3af}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <h1>💣 Double-Board Bomb Pot</h1>
+  <div class="sess" id="sess">–</div>
+</div>
+<div class="small">9-handed · 5bb bomb ante · two boards, half pot each · vs 8 bots · every decision graded</div>
+<div id="boardwrap">
+  <div id="potline">POT 0.0bb</div>
+  <div class="boardrow"><div class="boardlbl">TOP</div><div id="board1"></div></div>
+  <div class="boardrow"><div class="boardlbl">BOT</div><div id="board2"></div></div>
+</div>
+<div id="opps"></div>
+<div id="hero">
+  <span class="pos" id="heropos">–</span>
+  <div id="herocards"></div>
+  <div id="herostack"></div>
+</div>
+<div id="actions"><div class="small">starting…</div></div>
+<div id="nextbar" style="display:none"><button onclick="nextHand()">Next hand →</button></div>
+<div id="feed"></div>
+<script src="core.js?v=1"></script>
+<script src="engine.js?v=1"></script>
+<script>
+window.onerror=function(msg){var f=document.getElementById('feed');if(f){var d=document.createElement('div');d.style.color='#e74c3c';d.textContent='Error: '+msg;f.prepend(d);}};
+const $=id=>document.getElementById(id);
+// RANKS comes from core.js global; SUIT is local (no collision)
+const SUIT=['♠','♥','♦','♣'];
+function cardEl(c){
+  const d=document.createElement('span');
+  d.className='card'+((c.s===1||c.s===2)?' red':'');
+  d.textContent=RANKS[c.r]+SUIT[c.s];
+  return d;
+}
+function backEl(){const d=document.createElement('span');d.className='card back';d.textContent='?';return d;}
+let game, pumping=false;
+
+const cb={
+  feed(html){const d=document.createElement('div');d.innerHTML=html;$('feed').prepend(d);},
+  update(){render();},
+  heroTurn(acts){showActions(acts);},
+  showdown(r){$('nextbar').style.display='block';}
+};
+
+function newGame(){
+  game=new DBGame(cb);
+  game.startHand();
+  pump();
+}
+function nextHand(){
+  $('nextbar').style.display='none';
+  game.startHand();
+  pump();
+}
+function pump(){
+  if(pumping) return; pumping=true;
+  (function loop(){
+    let r;
+    try{ r=game.step(); }catch(e){ cb.feed('<span style="color:#e74c3c">Engine error: '+e.message+'</span>'); pumping=false; return; }
+    render();
+    if(r.t==='hero'){ pumping=false; return; }
+    if(r.t==='end'){ pumping=false; render(); return; }
+    setTimeout(loop, r.t==='street'?900:550);
+  })();
+}
+function render(){
+  if(!game) return;
+  $('potline').textContent='POT '+game.pot.toFixed(1)+'bb';
+  const b1=$('board1'), b2=$('board2');
+  b1.innerHTML=''; b2.innerHTML='';
+  game.board1.forEach(c=>b1.appendChild(cardEl(c)));
+  game.board2.forEach(c=>b2.appendChild(cardEl(c)));
+  // opponents
+  const op=$('opps'); op.innerHTML='';
+  for(let s=1;s<9;s++){
+    const d=document.createElement('div');
+    d.className='opp'+(game.folded[s]?' folded':'');
+    d.innerHTML=`<div class="st">P${s} ${dbPosName((game.button+s)%9)}</div><div>${game.stacks[s].toFixed(0)}bb</div><div>${game.folded[s]?'fold':''}</div>`;
+    op.appendChild(d);
+  }
+  $('heropos').textContent='HERO '+dbPosName(game.button);
+  const hc=$('herocards'); hc.innerHTML='';
+  game.hole[0].forEach(c=>hc.appendChild(cardEl(c)));
+  $('herostack').textContent=`Stack ${game.stacks[0].toFixed(1)}bb · bet ${game.handBet[0].toFixed(1)}bb`;
+  // session
+  const goodCt=game.sessGrades.filter(g=>g==='A'||g==='B').length;
+  const avg=game.sessGrades.length?(100*goodCt/game.sessGrades.length):0;
+  $('sess').innerHTML=`${game.sessHands} hands · <span style="color:${game.sessNet>=0?'#2ecc71':'#e74c3c'}">${game.sessNet>=0?'+':''}${game.sessNet.toFixed(1)}</span>bb · <span style="color:#a3e635">${avg.toFixed(0)}% good</span>`;
+}
+function showActions(acts){
+  const box=$('actions'); box.innerHTML='';
+  const tc=game.toCall(0);
+  if(tc>0.001){
+    const eqNote=document.createElement('div');
+    eqNote.className='small';
+    eqNote.textContent=`To call ${tc.toFixed(1)} into ${game.pot.toFixed(1)} — need ${(tc/(game.pot+tc)*100).toFixed(1)}% combined`;
+    box.appendChild(eqNote);
+  }
+  acts.forEach(a=>{
+    if(a.t==='raise'||a.t==='bet'){
+      // size selector
+      const row=document.createElement('div'); row.className='sizerow';
+      const cur=game.handBet[0];
+      const opts=[
+        {l:'Min', v:a.minTotal},
+        {l:'½ Pot', v:cur+Math.max(1,(game.pot*0.5))},
+        {l:'Pot', v:a.maxTotal}
+      ];
+      opts.forEach(o=>{
+        const b=document.createElement('button');
+        let v=Math.min(o.v, a.maxTotal);
+        v=Math.max(v, a.minTotal);
+        v=Math.round(v*2)/2;
+        b.textContent=`${a.t==='bet'?'Bet':'Raise'} ${o.l} ${v.toFixed(1)}`;
+        b.className='primary';
+        b.onclick=()=>{game.heroDo({t:a.t,total:v});box.innerHTML='<div class="small">…</div>';pump();};
+        row.appendChild(b);
+      });
+      box.appendChild(row);
+    } else {
+      const b=document.createElement('button');
+      b.textContent=a.label;
+      if(a.t==='fold') b.className='danger';
+      if(a.t==='call') b.className='primary';
+      b.onclick=()=>{game.heroDo(a);box.innerHTML='<div class="small">…</div>';pump();};
+      box.appendChild(b);
+    }
+  });
+}
+newGame();
+</script>
+</body>
+</html>
